@@ -1,9 +1,17 @@
 {
   "name": "react-native-crypto-vault",
-  "version": "0.1.0",
-  "description": "crypto vault",
+  "version": "1.0.0",
+  "description": "Secure Vault for React Native Apps (Android & iOS)",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
+  "keywords": [
+    "react-native",
+    "crypto",
+    "vault",
+    "keystore",
+    "keychain",
+    "encryption"
+  ],
   "exports": {
     ".": {
       "source": "./src/index.tsx",
@@ -40,11 +48,6 @@
     "prepare": "bob build",
     "release": "release-it --only-version"
   },
-  "keywords": [
-    "react-native",
-    "ios",
-    "android"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/thtRajasthaniGuy/react-native-crypto-vault.git"
