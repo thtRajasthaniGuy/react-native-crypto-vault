@@ -1,97 +1,285 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+React Native Crypto Vault — Developer Documentation
+Table of Contents
 
-# Getting Started
+Overview
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+Architecture
 
-## Step 1: Start Metro
+Design Decisions & Security Considerations
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+Core Features & Methods
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+Key Generation & Management
 
-```sh
-# Using npm
-npm start
+AES-GCM Encryption / Decryption
 
-# OR using Yarn
-yarn start
-```
+HMAC-SHA256 Signing
 
-## Step 2: Build and run your app
+AES-GCM + HMAC (Authenticated Encryption)
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+Random Bytes & UUID
 
-### Android
+Code Examples
 
-```sh
-# Using npm
-npm run android
+How to Use
 
-# OR using Yarn
-yarn android
-```
+Future Enhancements
 
-### iOS
+Overview
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+react-native-crypto-vault is a secure vault abstraction library for React Native apps. It provides a unified interface for:
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+Generating and storing secure keys in Android Keystore / iOS Keychain
 
-```sh
-bundle install
-```
+Encrypting and decrypting sensitive data using AES-GCM
 
-Then, and every time you update your native dependencies, run:
+Authenticating data integrity using HMAC-SHA256
 
-```sh
-bundle exec pod install
-```
+Securely generating random bytes and UUIDs
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Why this library: Mobile apps need confidentiality and integrity for sensitive information. The library ensures:
 
-```sh
-# Using npm
-npm run ios
+Keys never leave the secure OS storage
 
-# OR using Yarn
-yarn ios
-```
+Strong cryptography is used
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+API is developer-friendly for React Native
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+Architecture
 
-## Step 3: Modify your app
+High-level flow:
 
-Now that you have successfully run the app, let's make changes!
+React Native JS Code
+│
+▼
+TurboModule JS Native Bridge
+│
+▼
+Android/iOS Native Module
+│
+├── Android Keystore (AES Keys, SecureRandom)
+└── iOS Keychain (AES Keys)
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+JS Side: Calls methods using TurboModuleRegistry
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+Native Side (Kotlin / Objective-C): Implements cryptography and key management
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+Key Storage: Secure OS-provided storage ensures keys are hardware-backed where available
 
-## Congratulations! :tada:
+Design Decisions & Security Considerations
 
-You've successfully run and modified your React Native App. :partying_face:
+AES-GCM:
 
-### Now what?
+AES with Galois/Counter Mode provides encryption + integrity check.
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+Random IV (12 bytes) generated for each encryption ensures uniqueness.
 
-# Troubleshooting
+HMAC-SHA256:
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+Ensures message integrity and authentication.
 
-# Learn More
+Used in combination with AES-GCM for authenticated encryption.
 
-To learn more about React Native, take a look at the following resources:
+Keystore / Keychain:
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Avoids storing raw keys in app memory.
+
+Android KeyStore / iOS Keychain provide hardware-backed key storage.
+
+Base64 Encoding:
+
+All encrypted data, HMACs, and keys are Base64 encoded for safe transport and storage.
+
+Alias-based Key Access:
+
+Each key has a unique alias
+
+Prevents overwriting unrelated keys
+
+Keys can be reused across multiple operations safely
+
+SecureRandom:
+
+Ensures cryptographically secure random bytes for IVs, keys, and UUIDs
+
+Core Features & Methods
+Key Generation & Management
+
+Native Method: generateSecureKey(alias: string)
+
+Purpose: Creates a key in OS Keystore if it doesn’t exist.
+
+Logic:
+
+val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+val spec = KeyGenParameterSpec.Builder(
+alias,
+KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+)
+.setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+.setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+.setKeySize(256)
+.build()
+keyGen.init(spec)
+keyGen.generateKey()
+
+Explanation:
+
+AES_KEY_SIZE = 256 bits ensures strong encryption
+
+GCM block mode provides confidentiality + integrity
+
+alias allows multiple keys to coexist
+
+JS Usage:
+
+await CryptoVault.generateSecureKey('my_app_aes_key');
+
+AES-GCM Encryption / Decryption
+
+Methods: aesGcmEncrypt, aesGcmDecrypt
+
+Logic:
+
+Retrieve key from Keystore
+
+Generate random IV (encryption only)
+
+Encrypt using Cipher.getInstance("AES/GCM/NoPadding")
+
+For decryption, extract IV from combined data
+
+Code:
+
+val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+val iv = cipher.iv
+val cipherBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+val combined = iv + cipherBytes
+val base64Result = Base64.encodeToString(combined, Base64.NO_WRAP)
+
+JS Usage:
+
+const cipher = await CryptoVault.aesGcmEncrypt('Hello', 'my_app_aes_key');
+const decrypted = await CryptoVault.aesGcmDecrypt(cipher, 'my_app_aes_key');
+
+Why this works over old code:
+
+Old code manually created random keys outside Keystore, causing security and consistency issues.
+
+New code ensures keys are securely stored and reused, IV is handled properly, Base64 encoding ensures safe transport.
+
+HMAC-SHA256 Signing
+
+Method: hmacSHA256(message: string, keyAlias: string)
+
+Logic:
+
+val key = getOrCreateKey(alias)
+val mac = Mac.getInstance("HmacSHA256")
+mac.init(key)
+val hmacBytes = mac.doFinal(message.toByteArray(Charsets.UTF_8))
+val hmacBase64 = Base64.encodeToString(hmacBytes, Base64.NO_WRAP)
+
+Explanation:
+
+Uses keystore key for HMAC
+
+Provides integrity verification
+
+Base64 encoding allows safe JS use
+
+JS Usage:
+
+const hmac = await CryptoVault.hmacSHA256('message', 'my_app_aes_key');
+
+Why updated:
+
+Previous versions used plain-text keys, insecure and inconsistent across platforms.
+
+Now uses alias-keystore key, which is secure, persistent, and consistent.
+
+AES-GCM + HMAC (Authenticated Encryption)
+
+Purpose: Encrypt and authenticate in one operation.
+
+Logic:
+
+Generate random IV
+
+Encrypt with AES-GCM
+
+Compute HMAC of cipherBytes
+
+Concatenate IV + cipher + HMAC for storage
+
+On decryption, verify HMAC before AES-GCM decryption
+
+JS Usage:
+
+const key = await CryptoVault.getRandomBytes(32);
+const encrypted = await CryptoVault.aesGcmEncryptWithHmac('message', key);
+const decrypted = await CryptoVault.aesGcmDecryptWithHmac(encrypted, key);
+
+Random Bytes & UUID
+
+Methods: getRandomBytes, getRandomId
+
+Logic:
+
+getRandomBytes(length) generates cryptographically secure random bytes
+
+getRandomId() generates UUID v4
+
+Both Base64 encode for safe transport
+
+JS Usage:
+
+const randomBytes = await CryptoVault.getRandomBytes(32);
+const randomId = await CryptoVault.getRandomId();
+
+Code Example
+const alias = 'my_app_aes_key';
+
+// Generate key once
+await CryptoVault.generateSecureKey(alias);
+
+// AES-GCM encryption
+const cipher = await CryptoVault.aesGcmEncrypt('Hello', alias);
+const decrypted = await CryptoVault.aesGcmDecrypt(cipher, alias);
+
+// HMAC-SHA256 signing
+const hmac = await CryptoVault.hmacSHA256('Message', alias);
+
+// AES-GCM + HMAC
+const key = await CryptoVault.getRandomBytes(32);
+const encrypted = await CryptoVault.aesGcmEncryptWithHmac('Secret message', key);
+const decryptedMessage = await CryptoVault.aesGcmDecryptWithHmac(encrypted, key);
+
+console.log({ cipher, decrypted, hmac, encrypted, decryptedMessage });
+
+How to Use in an App
+
+Import the library:
+
+import CryptoVault from 'react-native-crypto-vault';
+
+Generate or retrieve a secure key using alias.
+
+Use AES-GCM for encryption/decryption.
+
+Use HMAC-SHA256 for signing messages.
+
+Optionally, use AES-GCM + HMAC for authenticated encryption.
+
+Tip: Always generate keys once per alias. Re-generating overwrites the old key.
+
+Future Enhancements
+
+Biometric-based key access
+
+Backup & restore of keys
+
+Asymmetric encryption support (RSA/ECC)
+
+Customizable AES key sizes
