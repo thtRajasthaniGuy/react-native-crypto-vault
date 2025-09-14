@@ -1,28 +1,29 @@
-Best Practices & Integration Guide for react-native-crypto-vault
+# Best Practices & Integration Guide for react-native-crypto-vault
 
-This guide explains how to securely integrate react-native-crypto-vault in your React Native app, covering:
+This guide explains how to securely integrate `react-native-crypto-vault` in your React Native app, covering:
 
-Key generation
+- Key generation  
+- Encryption & decryption  
+- Hashing & signing  
+- Secure vault access  
+- Security best practices  
 
-Encryption & decryption
+---
 
-Hashing & signing
+## 1. Key Management
 
-Secure vault access
+### Generating a Secure Key
 
-Security best practices
-
-1. Key Management
-Generating a Secure Key
+```ts
 import CryptoVault from 'react-native-crypto-vault';
 
 const alias = 'user_aes_key';
 
 // Generate key if it doesn't exist
 await CryptoVault.generateSecureKey(alias);
+```
 
-
-Best Practices:
+# Best Practices:
 
 Use unique aliases per key to avoid overwriting
 
@@ -30,25 +31,27 @@ Generate the key once per user/session and reuse it for encryption operations
 
 Never store plaintext keys in code or local storage
 
-Retrieving a Key
+# Retrieving a Key
 
-Keys are never exported in plaintext. Use library methods directly to encrypt/decrypt.
-
+Keys are never exported in plaintext. Use library methods directly to encrypt/decrypt:
+```
 const encryptedData = await CryptoVault.aesGcmEncrypt('secret', alias);
+```
 
-2. AES-GCM Encryption & Decryption
+# 2. AES-GCM Encryption & Decryption
 
-AES-GCM provides authenticated encryption, which means it ensures:
+AES-GCM provides authenticated encryption, which ensures:
 
 Confidentiality: Only someone with the key can decrypt
 
 Integrity: Detects if the ciphertext was modified
 
+```
 const plainText = 'Sensitive data';
 const cipherText = await CryptoVault.aesGcmEncrypt(plainText, alias);
 
 const decrypted = await CryptoVault.aesGcmDecrypt(cipherText, alias);
-
+```
 
 Security Tips:
 
@@ -58,9 +61,10 @@ Use different keys for different purposes (e.g., user tokens vs app secrets)
 
 Never log or expose ciphertext unnecessarily
 
-3. SHA-256 Hashing
+# 3. SHA-256 Hashing
+```
 const passwordHash = await CryptoVault.hashString('my-password');
-
+```
 
 Best Practices:
 
@@ -70,13 +74,13 @@ Consider adding a salt to hashes for extra security
 
 Never store raw passwords in storage
 
-4. HMAC-SHA256 Signing
+# 4. HMAC-SHA256 Signing
+HMAC ensures message authenticity. Only someone with the key can generate the same HMAC:
 
-HMAC ensures message authenticity. Only someone with the key can generate the same HMAC.
-
+```
 const message = 'data-to-authenticate';
 const hmac = await CryptoVault.hmacSHA256(message, alias);
-
+```
 
 Best Practices:
 
@@ -84,11 +88,13 @@ Use HMAC to verify messages from external systems
 
 Combine with AES-GCM to create authenticated encryption
 
-5. AES-GCM + HMAC (Authenticated Encryption)
+# 5. AES-GCM + HMAC (Authenticated Encryption)
+
+```
 const randomKey = await CryptoVault.getRandomBytes(32);
 const encrypted = await CryptoVault.aesGcmEncryptWithHmac('message', randomKey);
 const decrypted = await CryptoVault.aesGcmDecryptWithHmac(encrypted, randomKey);
-
+```
 
 Why this is important:
 
@@ -98,8 +104,7 @@ Detects tampering attacks
 
 Tip: Only use this when transporting data outside the app (e.g., server communication)
 
-6. Vault Policies & PIN / Biometric Access (Future)
-
+# 6. Vault Policies & PIN / Biometric Access (Future)
 Unlock vault using PIN or biometric for sensitive operations
 
 Auto-lock after inactivity to prevent unauthorized access
@@ -110,10 +115,11 @@ Encourage users to enable biometrics for convenience and security
 
 Never hardcode PINs; always let users set their own
 
-7. Random IDs & Device Information
+# 7. Random IDs & Device Information
+```
 const deviceId = await CryptoVault.getDeviceInfo();
 const uuid = await CryptoVault.getRandomId();
-
+```
 
 Use Cases:
 
@@ -125,7 +131,8 @@ Cryptographically secure random tokens
 
 Tip: Avoid using predictable IDs; always rely on library-generated values
 
-8. Integration Workflow Example
+# 8. Integration Workflow Example
+```
 // 1. Generate a key for a user session
 await CryptoVault.generateSecureKey('user_session_key');
 
@@ -141,8 +148,9 @@ const decryptedToken = await CryptoVault.aesGcmDecrypt(storedCipher!, 'user_sess
 
 // 5. Sign data for server verification
 const signature = await CryptoVault.hmacSHA256(decryptedToken, 'user_session_key');
+```
 
-9. General Security Best Practices
+# 9. General Security Best Practices
 
 Do not expose keys in logs or network requests
 
@@ -156,7 +164,7 @@ Backup encrypted vault data securely (future feature)
 
 Use AES-GCM + HMAC for all sensitive communication
 
-10. Notes for Developers
+# 10. Notes for Developers
 
 Compatible with React Native >=0.70
 
