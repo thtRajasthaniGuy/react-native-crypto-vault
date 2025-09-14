@@ -214,13 +214,7 @@ Support for asymmetric encryption (RSA/ECC)
 
 Custom key sizes and algorithms
 
-<<<<<<< HEAD
-Contributing
-=======
-
 # Contributing
-
-> > > > > > > c0534a23d3ace4684cb684bc25042669a376bc72
 
 Fork the repo
 
@@ -230,12 +224,6 @@ Follow existing code style and naming conventions
 
 Add tests for any new feature
 
-<<<<<<< HEAD
-License
-=======
-
 # License
-
-> > > > > > > c0534a23d3ace4684cb684bc25042669a376bc72
 
 MIT © [thtRajasthaniGuy]
