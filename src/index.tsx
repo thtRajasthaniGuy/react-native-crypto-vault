@@ -20,10 +20,21 @@ export default {
     CryptoVault.aesGcmDecryptWithHmac(cipherTextBase64, keyBase64),
   generateSecureKeyWithAuth: (alias: string, authValiditySeconds = -1) =>
     CryptoVault.generateSecureKeyWithAuth(alias, authValiditySeconds),
-  aesGcmEncryptWithAuth: (plainText: string, keyBase64: string) =>
-    CryptoVault.aesGcmEncryptWithAuth(plainText, keyBase64),
-  aesGcmDecryptWithAuth: (cipherTextBase64: string, keyBase64: string) =>
-    CryptoVault.aesGcmDecryptWithAuth(cipherTextBase64, keyBase64),
+  aesGcmEncryptWithAuth: (
+    plainText: string,
+    alias: string,
+    authValiditySeconds?: number
+  ) => CryptoVault.aesGcmEncryptWithAuth(plainText, alias, authValiditySeconds),
+  aesGcmDecryptWithAuth: (
+    cipherTextBase64: string,
+    alias: string,
+    authValiditySeconds?: number
+  ) =>
+    CryptoVault.aesGcmDecryptWithAuth(
+      cipherTextBase64,
+      alias,
+      authValiditySeconds
+    ),
   isDeviceSecure: () => CryptoVault.isDeviceSecure(),
   backupKey: (alias: string) => CryptoVault.backupKey(alias),
   restoreKey: (alias: string, backupBlobBase64: string) =>
@@ -45,7 +56,13 @@ export default {
     CryptoVault.restoreVault(password, backupBlob),
   setVaultPin: (pin: string) => CryptoVault.setVaultPin(pin),
   unlockVaultWithPin: (pin: string) => CryptoVault.unlockVaultWithPin(pin),
-  setVaultPolicy: (policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT') =>
-    CryptoVault.setVaultPolicy(policy),
+  setVaultPolicy: (
+    policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT',
+    timeoutMs?: number
+  ) => CryptoVault.setVaultPolicy(policy, timeoutMs),
   getVaultPolicy: () => CryptoVault.getVaultPolicy(),
+  aesGcmEncryptRaw: (plainText: string, keyBase64: string) =>
+    CryptoVault.aesGcmEncryptRaw(plainText, keyBase64),
+  aesGcmDecryptRaw: (cipherTextBase64: string, keyBase64: string) =>
+    CryptoVault.aesGcmDecryptRaw(cipherTextBase64, keyBase64),
 };

@@ -59,6 +59,12 @@ object VaultManager {
   private var hashedPin: String? = null
   private var pinSalt: ByteArray? = null
 
+  private var vaultPolicy: VaultPolicy = VaultPolicy.NONE
+  private var isLocked: Boolean = true
+
+  private var timeoutDurationMs: Long = 0L
+  private var lastUsedAt: Long = 0L
+
   fun init(context: Context, authValidity: Long = 300) {
     authValiditySeconds = authValidity
 
@@ -77,23 +83,13 @@ object VaultManager {
   }
 
   private fun saveState() {
-    Log.d("VaultManager", "--- saveState() called ---")
     try {
       if (!::prefs.isInitialized) {
-        Log.e("VaultManager", "Preferences not initialized!")
         throw Exception("VaultManager not initialized")
       }
-
-      Log.d("VaultManager", "Serializing current state...")
       val json = gson.toJson(currentState)
-      Log.d("VaultManager", "State JSON length: ${json.length}")
-
-      Log.d("VaultManager", "Saving to SharedPreferences...")
       prefs.edit().putString(PREF_VAULT_JSON, json).apply()
-      Log.d("VaultManager", "State saved successfully")
-      Log.d("VaultManager", "--- saveState() completed ---")
     } catch (e: Exception) {
-      Log.e("VaultManager", "Error in saveState:", e)
       throw e
     }
   }
@@ -105,28 +101,44 @@ object VaultManager {
   }
 
   fun lockVault() {
-    currentState = currentState.copy(isLocked = true)
-    saveState()
+    Log.d("VaultManager", "Vault manually locked")
+    isLocked = true
   }
 
   fun unlockVault() {
-    currentState = currentState.copy(
-      isLocked = false,
-      lastUnlockTime = SystemClock.elapsedRealtime()
-    )
-    saveState()
+    lastUsedAt = SystemClock.elapsedRealtime() // reset inactivity timer
+    isLocked = false
   }
 
-  fun isVaultLocked(): Boolean {
-    if (!currentState.isLocked) {
-      val elapsed = (SystemClock.elapsedRealtime() - currentState.lastUnlockTime) / 1000
-      if (elapsed > authValiditySeconds) {
-        lockVault()
-        return true
+  fun touch() {
+    try {
+      lastUnlockTime = SystemClock.elapsedRealtime()
+      try {
+        currentState = currentState.copy(lastUnlockTime = lastUnlockTime)
+      } catch (ignored: Exception) {
       }
+    } catch (e: Exception) {
+      Log.w("VaultManager", "touch() failed to update lastUnlockTime: ${e.message}")
     }
-    return currentState.isLocked
   }
+
+  fun getPolicy(): VaultPolicy = vaultPolicy
+
+  fun isVaultLocked(): Boolean {
+    Log.d("VaultManager", "isVaultLocked called, isLocked=$isLocked, policy=$vaultPolicy")
+    return when (vaultPolicy) {
+      VaultPolicy.NONE -> false
+      VaultPolicy.TIMEOUT -> {
+        if (isLocked) return true
+        val now = SystemClock.elapsedRealtime()
+        val expired = (now - lastUsedAt) > timeoutDurationMs
+        if (expired) isLocked = true
+        isLocked
+      }
+      else -> isLocked
+    }
+  }
+
 
   fun getVaultState(): VaultState = currentState
 
@@ -135,75 +147,34 @@ object VaultManager {
    * 🔐 Derive AES key from password using PBKDF2
    */
   private fun deriveKeyFromPassword(password: String, salt: ByteArray, iterations: Int = 100000): SecretKey {
-    Log.d("VaultManager", "--- deriveKeyFromPassword() called ---")
-    Log.d("VaultManager", "Password length: ${password.length}")
-    Log.d("VaultManager", "Salt length: ${salt.size}")
-    Log.d("VaultManager", "Iterations: $iterations")
-
     try {
       val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-      Log.d("VaultManager", "SecretKeyFactory created: ${factory.algorithm}")
-
       val spec = PBEKeySpec(password.toCharArray(), salt, iterations, 256)
-      Log.d("VaultManager", "PBEKeySpec created with key length: 256")
-
       val derivedKey = factory.generateSecret(spec)
-      Log.d("VaultManager", "Secret generated successfully")
-
       val secretKey = SecretKeySpec(derivedKey.encoded, "AES")
-      Log.d("VaultManager", "SecretKeySpec created: ${secretKey.algorithm}")
-      Log.d("VaultManager", "--- deriveKeyFromPassword() completed ---")
-
       return secretKey
     } catch (e: Exception) {
-      Log.e("VaultManager", "Error in deriveKeyFromPassword:", e)
       throw e
     }
   }
 
   fun backupVault(password: String): String {
-    Log.d("VaultManager", "--- backupVault() called ---")
-    Log.d("VaultManager", "Password received, length: ${password.length}")
-
     if (!::prefs.isInitialized) {
-      Log.e("VaultManager", "VaultManager not initialized!")
       throw Exception("VaultManager not initialized. Call init() first.")
     }
-    Log.d("VaultManager", "VaultManager is initialized ✓")
-
-    Log.d("VaultManager", "Converting currentState to JSON...")
     val vaultData = gson.toJson(currentState).toByteArray(Charsets.UTF_8)
-    Log.d("VaultManager", "Vault data size: ${vaultData.size} bytes")
-
-    Log.d("VaultManager", "Generating random values...")
     val secureRandom = SecureRandom()
 
-    // Generate random salt and IV
     val salt = ByteArray(16).also { secureRandom.nextBytes(it) }
     val iv = ByteArray(12).also { secureRandom.nextBytes(it) }
-    Log.d("VaultManager", "Salt generated: ${Base64.encodeToString(salt, Base64.NO_WRAP).take(10)}...")
-    Log.d("VaultManager", "IV generated: ${Base64.encodeToString(iv, Base64.NO_WRAP).take(10)}...")
 
-    // Derive AES key from password
-    Log.d("VaultManager", "Deriving key from password...")
     val key = deriveKeyFromPassword(password, salt)
-    Log.d("VaultManager", "Key derived successfully, algorithm: ${key.algorithm}")
 
-    // AES-GCM encryption
-    Log.d("VaultManager", "Setting up AES-GCM encryption...")
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    Log.d("VaultManager", "Cipher instance created: ${cipher.algorithm}")
 
-    Log.d("VaultManager", "Initializing cipher for encryption...")
     cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, iv))
-    Log.d("VaultManager", "Cipher initialized successfully")
 
-    Log.d("VaultManager", "Encrypting vault data...")
     val ciphertext = cipher.doFinal(vaultData)
-    Log.d("VaultManager", "Encryption successful, ciphertext size: ${ciphertext.size} bytes")
-
-    // Build backup JSON blob
-    Log.d("VaultManager", "Building backup JSON...")
     val json = JSONObject()
     json.put("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
     json.put("iv", Base64.encodeToString(iv, Base64.NO_WRAP))
@@ -212,9 +183,6 @@ object VaultManager {
     json.put("algorithm", "AES/GCM/NoPadding")
 
     val result = json.toString()
-    Log.d("VaultManager", "Backup JSON created, length: ${result.length}")
-    Log.d("VaultManager", "--- backupVault() completed successfully ---")
-
     return result
   }
 
@@ -223,69 +191,36 @@ object VaultManager {
    * Uses PBKDF2-derived key from password. Does NOT use KeyStore alias.
    */
   fun restoreVault(password: String, backupBlob: String) {
-    Log.d("VaultManager", "--- restoreVault() called ---")
-    Log.d("VaultManager", "Password length: ${password.length}")
-    Log.d("VaultManager", "Backup blob length: ${backupBlob.length}")
-
-    Log.d("VaultManager", "Parsing backup JSON...")
     val json = JSONObject(backupBlob)
-    Log.d("VaultManager", "JSON parsed successfully")
-
-    Log.d("VaultManager", "Extracting backup components...")
     val salt = Base64.decode(json.getString("salt"), Base64.NO_WRAP)
     val iv = Base64.decode(json.getString("iv"), Base64.NO_WRAP)
     val ciphertext = Base64.decode(json.getString("ciphertext"), Base64.NO_WRAP)
     val iterations = json.optInt("iterations", 100000)
 
-    Log.d("VaultManager", "Salt length: ${salt.size}")
-    Log.d("VaultManager", "IV length: ${iv.size}")
-    Log.d("VaultManager", "Ciphertext length: ${ciphertext.size}")
-    Log.d("VaultManager", "Iterations: $iterations")
-
-    // Derive AES key
-    Log.d("VaultManager", "Deriving key from password...")
     val key = deriveKeyFromPassword(password, salt, iterations)
-    Log.d("VaultManager", "Key derived successfully")
 
-    // AES-GCM decryption
-    Log.d("VaultManager", "Setting up AES-GCM decryption...")
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    Log.d("VaultManager", "Cipher instance created")
 
-    Log.d("VaultManager", "Initializing cipher for decryption...")
     cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
-    Log.d("VaultManager", "Cipher initialized successfully")
 
-    Log.d("VaultManager", "Decrypting data...")
     val plainData = cipher.doFinal(ciphertext)
-    Log.d("VaultManager", "Decryption successful, plain data size: ${plainData.size} bytes")
 
-    // Rehydrate state
-    Log.d("VaultManager", "Parsing decrypted JSON...")
     val jsonString = String(plainData, Charsets.UTF_8)
-    Log.d("VaultManager", "Decrypted JSON preview: ${jsonString.take(100)}...")
 
-    Log.d("VaultManager", "Deserializing vault state...")
     currentState = gson.fromJson(jsonString, VaultState::class.java)
-    Log.d("VaultManager", "Vault state deserialized successfully")
 
-    Log.d("VaultManager", "Saving restored state...")
     saveState()
-    Log.d("VaultManager", "State saved successfully")
-
-    Log.d("VaultManager", "--- restoreVault() completed successfully ---")
   }
 
   // ---------------------------
   // Vault policy & lock check
   // ---------------------------
-  fun setVaultPolicy(policy: VaultPolicy, timeoutMillis: Long = 0) {
-    currentPolicy = policy
-    autoLockTimeout = timeoutMillis
-    isVaultUnlocked = policy == VaultPolicy.NONE
-    Log.d("VaultManager", "Vault policy set: $policy, timeout: $timeoutMillis ms")
+  fun setVaultPolicy(policy: VaultPolicy, timeoutMs: Long = 0L) {
+    this.vaultPolicy = policy
+    if (policy == VaultPolicy.TIMEOUT) {
+      this.timeoutDurationMs = timeoutMs
+    }
   }
-
   fun checkVaultLock(): Boolean {
     when (currentPolicy) {
       VaultPolicy.NONE -> return false

@@ -20,10 +20,15 @@ export interface Spec extends TurboModule {
     alias: string,
     authValiditySeconds?: number
   ): Promise<string>;
-  aesGcmEncryptWithAuth(plainText: string, alias: string): Promise<string>;
+  aesGcmEncryptWithAuth(
+    plainText: string,
+    alias: string,
+    authValiditySeconds?: number
+  ): Promise<string>;
   aesGcmDecryptWithAuth(
     cipherTextBase64: string,
-    alias: string
+    alias: string,
+    authValiditySeconds?: number
   ): Promise<string>;
   isDeviceSecure(): Promise<boolean>;
   backupKey(alias: string): Promise<string>;
@@ -37,9 +42,15 @@ export interface Spec extends TurboModule {
   setVaultPin(pin: string): Promise<void>;
   unlockVaultWithPin(pin: string): Promise<void>;
   setVaultPolicy(
-    policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT'
+    policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT',
+    timeoutMs?: number
   ): Promise<void>;
   getVaultPolicy(): Promise<'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT'>;
+  aesGcmEncryptRaw(plainText: string, keyBase64: string): Promise<string>;
+  aesGcmDecryptRaw(
+    cipherTextBase64: string,
+    keyBase64: string
+  ): Promise<string>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('CryptoVault');

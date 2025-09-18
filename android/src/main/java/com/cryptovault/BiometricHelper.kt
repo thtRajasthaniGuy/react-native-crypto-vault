@@ -16,11 +16,12 @@ object BiometricHelper {
   }
 
   fun authenticate(
-    activity: FragmentActivity,
-    onSuccess: () -> Unit,
-    onFailure: () -> Unit,
-    onError: (String) -> Unit // Note: this takes String, not Exception
-  ) {
+  activity: FragmentActivity,
+  cryptoObject: BiometricPrompt.CryptoObject? = null,
+  onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
+  onFailure: () -> Unit,
+  onError: (String) -> Unit
+) {
     try {
       val executor = ContextCompat.getMainExecutor(activity)
       val promptInfo = BiometricPrompt.PromptInfo.Builder()
@@ -32,7 +33,7 @@ object BiometricHelper {
       val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
           super.onAuthenticationSucceeded(result)
-          onSuccess()
+          onSuccess(result)
         }
 
         override fun onAuthenticationFailed() {
@@ -46,7 +47,11 @@ object BiometricHelper {
         }
       })
 
-      biometricPrompt.authenticate(promptInfo)
+      if (cryptoObject != null) {
+        biometricPrompt.authenticate(promptInfo, cryptoObject)
+      } else {
+        biometricPrompt.authenticate(promptInfo)
+      }
     } catch (ex: Exception) {
       onError(ex.message ?: "Unknown biometric error")
     }

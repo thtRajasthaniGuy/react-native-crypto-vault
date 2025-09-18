@@ -2,6 +2,7 @@ package com.cryptovault
 
 import android.app.KeyguardManager
 import android.content.Context
+import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
@@ -21,6 +22,7 @@ import android.util.Base64
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.fragment.app.FragmentActivity
+import com.reactnativecryptovault.AuthenticationManager
 import com.reactnativecryptovault.BiometricHelper
 import com.reactnativecryptovault.VaultManager
 import java.nio.ByteBuffer
@@ -53,7 +55,7 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   NativeCryptoVaultSpec(reactContext) {
   private val restoredKeys = ConcurrentHashMap<String, SecretKey>()
   private val secureRandom = SecureRandom()
-
+  private val authManager = AuthenticationManager()
   override fun getName(): String {
     return NAME
   }
@@ -127,6 +129,10 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   override fun aesGcmEncrypt(plainText: String, alias: String, promise: Promise) {
     try {
+      if (VaultManager.isVaultLocked()) {
+        promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
+        return
+      }
       val secretKey = getOrCreateKeyWithAuth(alias) // now uses auth-protected key
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.ENCRYPT_MODE, secretKey)
@@ -134,6 +140,7 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
       val cipherBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
       val combined = iv + cipherBytes
       val base64Result = Base64.encodeToString(combined, Base64.NO_WRAP)
+      VaultManager.touch()
       promise.resolve(base64Result)
     } catch (e: KeyPermanentlyInvalidatedException) {
       // Key invalidated (e.g., biometric enrolled changed)
@@ -149,6 +156,10 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   override fun aesGcmDecrypt(cipherTextBase64: String, alias: String, promise: Promise) {
     try {
+      if (VaultManager.isVaultLocked()) {
+        promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
+        return
+      }
       val secretKey = getOrCreateKeyWithAuth(alias) // auth-protected key
       val decoded = Base64.decode(cipherTextBase64, Base64.NO_WRAP)
       val iv = decoded.copyOfRange(0, 12)
@@ -157,6 +168,7 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
       cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
       val plainBytes = cipher.doFinal(cipherBytes)
       val plainText = String(plainBytes, Charsets.UTF_8)
+      VaultManager.touch()
       promise.resolve(plainText)
     } catch (e: KeyPermanentlyInvalidatedException) {
       promise.reject("KEY_INVALIDATED", "Key is no longer valid", e)
@@ -166,6 +178,55 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
       promise.reject("AES_DECRYPT_FAILED", e)
     }
   }
+
+
+  @ReactMethod
+override fun aesGcmEncryptRaw(plainText: String, keyBase64: String, promise: Promise) {
+  try {
+    val keyBytes = Base64.decode(keyBase64, Base64.DEFAULT)
+    val secretKey = SecretKeySpec(keyBytes, "AES")
+
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+    val iv = cipher.iv
+    val encrypted = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+
+    // Combine IV + cipher text → Base64
+    val combined = ByteBuffer.allocate(iv.size + encrypted.size)
+      .put(iv)
+      .put(encrypted)
+      .array()
+
+    promise.resolve(Base64.encodeToString(combined, Base64.NO_WRAP))
+  } catch (e: Exception) {
+    promise.reject("AES_GCM_ENCRYPT_RAW_FAILED", e.message, e)
+  }
+}
+
+@ReactMethod
+override fun aesGcmDecryptRaw(cipherTextBase64: String, keyBase64: String, promise: Promise) {
+  try {
+    val keyBytes = Base64.decode(keyBase64, Base64.DEFAULT)
+    val secretKey = SecretKeySpec(keyBytes, "AES")
+
+    val combined = Base64.decode(cipherTextBase64, Base64.DEFAULT)
+    val buffer = ByteBuffer.wrap(combined)
+
+    val iv = ByteArray(12) // GCM default IV size
+    buffer.get(iv)
+    val encrypted = ByteArray(buffer.remaining())
+    buffer.get(encrypted)
+
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    val spec = GCMParameterSpec(128, iv)
+    cipher.init(Cipher.DECRYPT_MODE, secretKey, spec)
+
+    val decrypted = cipher.doFinal(encrypted)
+    promise.resolve(String(decrypted, Charsets.UTF_8))
+  } catch (e: Exception) {
+    promise.reject("AES_GCM_DECRYPT_RAW_FAILED", e.message, e)
+  }
+}
 
   // helper: get existing key or generate new
   private fun getOrCreateKey(alias: String): SecretKey {
@@ -232,6 +293,10 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   override fun aesGcmEncryptWithHmac(plainText: String, keyBase64: String, promise: Promise) {
     try {
+      if (VaultManager.isVaultLocked()) {
+        promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
+        return
+      }
       val keyBytes = Base64.decode(keyBase64, Base64.NO_WRAP)
       val secretKey = SecretKeySpec(keyBytes, "AES")
 
@@ -252,7 +317,7 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
       // 4️⃣ Combine IV + cipher + HMAC
       val output = iv + cipherBytes + hmacBytes
       val outputBase64 = Base64.encodeToString(output, Base64.NO_WRAP)
-
+      VaultManager.touch()
       promise.resolve(outputBase64)
     } catch (e: Exception) {
       promise.reject("AES_HMAC_ERROR", e)
@@ -262,6 +327,10 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   override fun aesGcmDecryptWithHmac(dataBase64: String, keyBase64: String, promise: Promise) {
     try {
+      if (VaultManager.isVaultLocked()) {
+        promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
+        return
+      }
       val keyBytes = Base64.decode(keyBase64, Base64.NO_WRAP)
       val inputBytes = Base64.decode(dataBase64, Base64.NO_WRAP)
 
@@ -283,42 +352,14 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
       val cipher = Cipher.getInstance("AES/GCM/NoPadding")
       cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, iv))
       val decrypted = cipher.doFinal(cipherBytes)
+      VaultManager.touch()
       promise.resolve(String(decrypted, Charsets.UTF_8))
     } catch (e: Exception) {
       promise.reject("AES_HMAC_ERROR", e)
     }
   }
 
-  private fun getOrCreateKeyWithAuth(
-    alias: String,
-    authValiditySeconds: Int = -1
-  ): SecretKey {
-    val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
-    // Return existing key if it exists
-    if (keyStore.containsAlias(alias)) {
-      return keyStore.getKey(alias, null) as SecretKey
-    }
-
-    // Generate a new key with authentication required
-    val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-    val specBuilder = KeyGenParameterSpec.Builder(
-      alias,
-      KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-    )
-      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-      .setKeySize(AES_KEY_SIZE)
-      .setUserAuthenticationRequired(true) // mandatory authentication
-
-    if (authValiditySeconds >= 0) {
-      // temporary cache duration in seconds (e.g., 300 = 5 minutes)
-      specBuilder.setUserAuthenticationValidityDurationSeconds(authValiditySeconds)
-    }
-
-    keyGenerator.init(specBuilder.build())
-    return keyGenerator.generateKey()
-  }
 
   @ReactMethod
   override fun generateSecureKeyWithAuth(
@@ -335,78 +376,362 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  // Fixed authentication methods for CryptoVaultModule
+
   @ReactMethod
-  override fun aesGcmEncryptWithAuth(plainText: String, alias: String, promise: Promise) {
+  override fun aesGcmEncryptWithAuth(
+    plainText: String,
+    alias: String,
+    authValiditySeconds: Double?,
+    promise: Promise
+  ) {
     try {
-      // 1️⃣ Check if vault is locked
       if (VaultManager.isVaultLocked()) {
         promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
         return
       }
 
-      // 2️⃣ Get key: first restored in-memory, fallback to Keystore
-      val secretKey = restoredKeys[alias] ?: run {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.getKey(alias, null) as? SecretKey
-          ?: throw Exception("Key not found for alias: $alias")
+      val validitySeconds: Int = authValiditySeconds?.toInt() ?: 30
+      val authValidityMs: Long = validitySeconds * 1000L
+
+      Log.d("CryptoVault", "🔍 ENCRYPT: Checking auth for alias: $alias, validity: ${authValidityMs}ms")
+      val isAuthValid = authManager.isAuthenticationValid(alias, authValidityMs)
+      Log.d("CryptoVault", "🔍 ENCRYPT: Auth result: $isAuthValid")
+      // Check if authentication is still valid for this key
+      if (isAuthValid) {
+        Log.d("CryptoVault", "Using cached authentication for encryption")
+
+        try {
+          val secretKey = getOrCreateKeyWithAuth(alias, validitySeconds)
+          // ALWAYS create a fresh cipher - never reuse!
+          val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+          cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+
+          val cipherBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+          val iv = cipher.iv
+
+          // Combine IV + ciphertext
+          val combined = ByteArray(iv.size + cipherBytes.size)
+          System.arraycopy(iv, 0, combined, 0, iv.size)
+          System.arraycopy(cipherBytes, 0, combined, iv.size, cipherBytes.size)
+
+          val base64Result = Base64.encodeToString(combined, Base64.NO_WRAP)
+          VaultManager.touch()
+          return promise.resolve(base64Result)
+        } catch (e: Exception) {
+          Log.e("CryptoVault", "Cached encryption failed, clearing auth", e)
+          authManager.clearAuthentication(alias)
+          // Fall through to biometric auth
+        }
       }
 
-      // 3️⃣ Generate IV
-      val iv = ByteArray(GCM_IV_LENGTH).also { secureRandom.nextBytes(it) }
+      Log.d("CryptoVault", "Requiring biometric authentication for encryption")
 
-      // 4️⃣ Encrypt with AES-GCM
-      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(AES_GCM_TAG_LENGTH, iv))
-      val cipherBytes = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+      // Ensure we're on the UI thread for biometric operations
+      reactApplicationContext.runOnUiQueueThread {
+        val activity = reactApplicationContext.currentActivity as? FragmentActivity
+        if (activity == null) {
+          promise.reject("NO_ACTIVITY", "No FragmentActivity found for biometric authentication")
+          return@runOnUiQueueThread
+        }
 
-      // 5️⃣ Combine IV + ciphertext
-      val combined = ByteBuffer.allocate(iv.size + cipherBytes.size)
-        .put(iv)
-        .put(cipherBytes)
-        .array()
-      val resultBase64 = Base64.encodeToString(combined, Base64.NO_WRAP)
+        try {
+          val secretKey = getOrCreateKeyWithAuth(alias, validitySeconds)
+          // Create fresh cipher for biometric authentication
+          val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+          cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+          val cryptoObject = androidx.biometric.BiometricPrompt.CryptoObject(cipher)
 
-      promise.resolve(resultBase64)
+          BiometricHelper.authenticate(
+            activity,
+            cryptoObject = cryptoObject,
+            onSuccess = { result ->
+              try {
+                val authenticatedCipher = result.cryptoObject?.cipher
+                if (authenticatedCipher == null) {
+                  promise.reject("CIPHER_ERROR", "Authenticated cipher not available")
+                  return@authenticate
+                }
+
+                // Use the authenticated cipher immediately
+                val cipherBytes = authenticatedCipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+                val iv = authenticatedCipher.iv
+
+                val combined = ByteArray(iv.size + cipherBytes.size)
+                System.arraycopy(iv, 0, combined, 0, iv.size)
+                System.arraycopy(cipherBytes, 0, combined, iv.size, cipherBytes.size)
+
+                val base64Result = Base64.encodeToString(combined, Base64.NO_WRAP)
+
+                // Mark authentication as valid (but don't cache cipher!)
+                authManager.markAuthenticated(alias, authValidityMs)
+                VaultManager.touch()
+                Log.d("CryptoVault", "Biometric authentication successful, marked as valid")
+
+                promise.resolve(base64Result)
+              } catch (e: Exception) {
+                Log.e("CryptoVault", "Encryption after biometric auth failed", e)
+                promise.reject("AES_ENCRYPT_AUTH_FAILED", "Encryption failed: ${e.message}", e)
+              }
+            },
+            onFailure = {
+              Log.d("CryptoVault", "Biometric authentication failed")
+              promise.reject("AUTH_FAILED", "Biometric authentication failed")
+            },
+            onError = { error ->
+              Log.e("CryptoVault", "Biometric authentication error: $error")
+              promise.reject("AUTH_ERROR", "Authentication error: $error")
+            }
+          )
+        } catch (e: Exception) {
+          Log.e("CryptoVault", "Failed to setup biometric authentication", e)
+          promise.reject("SETUP_ERROR", "Failed to setup authentication: ${e.message}", e)
+        }
+      }
+
+    } catch (e: UserNotAuthenticatedException) {
+      Log.e("CryptoVault", "User not authenticated", e)
+      promise.reject("USER_NOT_AUTHENTICATED", "User authentication required", e)
+    } catch (e: KeyPermanentlyInvalidatedException) {
+      Log.e("CryptoVault", "Key invalidated", e)
+      authManager.clearAuthentication(alias) // Clear invalid auth
+      promise.reject("KEY_INVALIDATED", "Key is no longer valid", e)
     } catch (e: Exception) {
-      promise.reject("ENCRYPT_FAILED", "AES-GCM encryption with auth failed: ${e.message}", e)
+      Log.e("CryptoVault", "Encryption with auth failed", e)
+      promise.reject("AES_ENCRYPT_AUTH_FAILED", "Encryption failed: ${e.message}", e)
     }
   }
 
   @ReactMethod
-  override  fun aesGcmDecryptWithAuth(cipherBase64: String, alias: String, promise: Promise) {
+  override fun aesGcmDecryptWithAuth(
+    base64CipherText: String,
+    alias: String,
+    authValiditySeconds: Double?,
+    promise: Promise
+  ) {
     try {
-      // 1️⃣ Check if vault is locked
       if (VaultManager.isVaultLocked()) {
         promise.reject("VAULT_LOCKED", "Vault is locked. Unlock it before using keys.")
         return
       }
 
-      // 2️⃣ Get key: restored in-memory first, fallback to Keystore
-      val secretKey = restoredKeys[alias] ?: run {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.getKey(alias, null) as? SecretKey
-          ?: throw Exception("Key not found for alias: $alias")
+      val validitySeconds: Int = authValiditySeconds?.toInt() ?: 30
+      val authValidityMs = validitySeconds * 1000L
+
+      // Parse the combined data (IV + ciphertext)
+      val combined = try {
+        Base64.decode(base64CipherText, Base64.NO_WRAP)
+      } catch (e: IllegalArgumentException) {
+        promise.reject("INVALID_DATA", "Invalid base64 encrypted data")
+        return
       }
 
-      // 3️⃣ Decode Base64 and split IV + ciphertext
-      val combined = Base64.decode(cipherBase64, Base64.NO_WRAP)
-      val byteBuffer = ByteBuffer.wrap(combined)
+      if (combined.size < 12) { // Minimum size: 12 bytes IV
+        promise.reject("INVALID_DATA", "Invalid encrypted data format - too short")
+        return
+      }
 
-      val iv = ByteArray(GCM_IV_LENGTH)
-      byteBuffer.get(iv)
-      val cipherBytes = ByteArray(byteBuffer.remaining())
-      byteBuffer.get(cipherBytes)
+      val iv = combined.copyOfRange(0, 12)
+      val cipherBytes = combined.copyOfRange(12, combined.size)
 
-      // 4️⃣ Decrypt AES-GCM
-      val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-      cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(AES_GCM_TAG_LENGTH, iv))
-      val plainBytes = cipher.doFinal(cipherBytes)
+      // Check if authentication is still valid for this key
+      if (authManager.isAuthenticationValid(alias, authValidityMs)) {
+        Log.d("CryptoVault", "Using cached authentication for decryption")
 
-      promise.resolve(String(plainBytes, Charsets.UTF_8))
+        try {
+          val secretKey = getOrCreateKeyWithAuth(alias, validitySeconds)
+          // ALWAYS create a fresh cipher with IV - never reuse!
+          val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+          cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+
+          val plainBytes = cipher.doFinal(cipherBytes)
+          val plainText = String(plainBytes, Charsets.UTF_8)
+          VaultManager.touch()
+
+          return promise.resolve(plainText)
+        } catch (e: Exception) {
+          Log.e("CryptoVault", "Cached decryption failed, clearing auth", e)
+          authManager.clearAuthentication(alias)
+          // Fall through to biometric auth
+        }
+      }
+
+      Log.d("CryptoVault", "Requiring biometric authentication for decryption")
+
+      // Ensure we're on the UI thread for biometric operations
+      reactApplicationContext.runOnUiQueueThread {
+        val activity = reactApplicationContext.currentActivity as? FragmentActivity
+        if (activity == null) {
+          promise.reject("NO_ACTIVITY", "No FragmentActivity found for biometric authentication")
+          return@runOnUiQueueThread
+        }
+
+        try {
+          val secretKey = getOrCreateKeyWithAuth(alias, validitySeconds)
+          // Create fresh cipher for biometric authentication with IV
+          val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+          cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
+          val cryptoObject = androidx.biometric.BiometricPrompt.CryptoObject(cipher)
+
+          BiometricHelper.authenticate(
+            activity,
+            cryptoObject = cryptoObject,
+            onSuccess = { result ->
+              try {
+                val authenticatedCipher = result.cryptoObject?.cipher
+                if (authenticatedCipher == null) {
+                  promise.reject("CIPHER_ERROR", "Authenticated cipher not available")
+                  return@authenticate
+                }
+
+                // Use the authenticated cipher immediately
+                val plainBytes = authenticatedCipher.doFinal(cipherBytes)
+                val plainText = String(plainBytes, Charsets.UTF_8)
+
+                // Mark authentication as valid (but don't cache cipher!)
+                authManager.markAuthenticated(alias, authValidityMs)
+                VaultManager.touch()
+                Log.d("CryptoVault", "Biometric authentication successful, marked as valid")
+
+                promise.resolve(plainText)
+              } catch (e: Exception) {
+                Log.e("CryptoVault", "Decryption after biometric auth failed", e)
+                promise.reject("AES_DECRYPT_AUTH_FAILED", "Decryption failed: ${e.message}", e)
+              }
+            },
+            onFailure = {
+              Log.d("CryptoVault", "Biometric authentication failed")
+              promise.reject("AUTH_FAILED", "Biometric authentication failed")
+            },
+            onError = { error ->
+              Log.e("CryptoVault", "Biometric authentication error: $error")
+              promise.reject("AUTH_ERROR", "Authentication error: $error")
+            }
+          )
+        } catch (e: Exception) {
+          Log.e("CryptoVault", "Failed to setup biometric authentication", e)
+          promise.reject("SETUP_ERROR", "Failed to setup authentication: ${e.message}", e)
+        }
+      }
+
+    } catch (e: UserNotAuthenticatedException) {
+      Log.e("CryptoVault", "User not authenticated", e)
+      promise.reject("USER_NOT_AUTHENTICATED", "User authentication required", e)
+    } catch (e: KeyPermanentlyInvalidatedException) {
+      Log.e("CryptoVault", "Key invalidated", e)
+      authManager.clearAuthentication(alias) // Clear invalid auth
+      promise.reject("KEY_INVALIDATED", "Key is no longer valid", e)
     } catch (e: Exception) {
-      promise.reject("DECRYPT_FAILED", "AES-GCM decryption with auth failed: ${e.message}", e)
+      Log.e("CryptoVault", "Decryption with auth failed", e)
+      promise.reject("AES_DECRYPT_AUTH_FAILED", "Decryption failed: ${e.message}", e)
     }
   }
+
+
+
+  @ReactMethod
+  override fun unlockVault(authData: String, promise: Promise) {
+    val policy = VaultManager.getPolicy()
+    Log.d("CryptoVault", "unlockVault called with policy: $policy")
+
+    when (policy) {
+      VaultPolicy.NONE, VaultPolicy.TIMEOUT -> {
+        VaultManager.unlockVault()
+        promise.resolve(true)
+      }
+      VaultPolicy.PIN -> {
+        if (VaultManager.unlockWithPin(authData)) {
+          VaultManager.unlockVault()
+          promise.resolve(true)
+        } else {
+          promise.reject("INVALID_PIN", "PIN is incorrect")
+        }
+      }
+      VaultPolicy.BIOMETRIC -> {
+        reactApplicationContext.runOnUiQueueThread {
+          val activity = reactApplicationContext.currentActivity as? FragmentActivity
+          if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No FragmentActivity found for biometric authentication")
+            return@runOnUiQueueThread
+          }
+
+          BiometricHelper.authenticate(
+            activity,
+            onSuccess = {
+              VaultManager.unlockVault()
+              authManager.markGlobalAuthenticated(300000L) // 5 minutes = 300,000ms
+              Log.d("CryptoVault", "🟢 VAULT UNLOCKED - Global auth set for 300 seconds")
+              promise.resolve(true)
+            },
+            onFailure = {
+              promise.reject("AUTH_FAILED", "Biometric authentication failed")
+            },
+            onError = { err ->
+              promise.reject("AUTH_FAILED", "Authentication error: $err")
+            }
+          )
+        }
+      }
+    }
+  }
+
+  // Updated key generation method with better error handling
+  private fun getOrCreateKeyWithAuth(
+    alias: String,
+    authValiditySeconds: Int = -1
+  ): SecretKey {
+    try {
+      val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+      // Return existing key if it exists and is valid
+      if (keyStore.containsAlias(alias)) {
+        val existingKey = keyStore.getKey(alias, null) as? SecretKey
+        if (existingKey != null) {
+          return existingKey
+        } else {
+          Log.w("CryptoVault", "Existing key for alias '$alias' is null, regenerating")
+          keyStore.deleteEntry(alias)
+        }
+      }
+
+      // Generate a new key with authentication required
+      val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+      val specBuilder = KeyGenParameterSpec.Builder(
+        alias,
+        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+      )
+        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+        .setKeySize(AES_KEY_SIZE)
+        //.setUserAuthenticationRequired(true) // Require authentication
+
+      // Set authentication validity duration
+//      if (authValiditySeconds > 0) {
+//        specBuilder.setUserAuthenticationValidityDurationSeconds(authValiditySeconds)
+//      } else {
+//        // Require authentication for every use
+//        specBuilder.setUserAuthenticationValidityDurationSeconds(-1)
+//      }
+
+      // For API 30+ (Android 11+), specify biometric authentication
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        specBuilder.setUserAuthenticationParameters(
+          authValiditySeconds,
+          KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL
+        )
+      }
+
+      keyGenerator.init(specBuilder.build())
+      val generatedKey = keyGenerator.generateKey()
+      Log.d("CryptoVault", "Generated new authenticated key for alias: $alias")
+      return generatedKey
+
+    } catch (e: Exception) {
+      Log.e("CryptoVault", "Failed to get or create key with auth for alias: $alias", e)
+      throw e
+    }
+  }
+
 
   @ReactMethod
   override fun isDeviceSecure(promise: Promise) {
@@ -571,38 +896,8 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
     promise.resolve(null)
   }
 
-  @ReactMethod
-  override fun unlockVault(authData: String, promise: Promise) {
-    val activity = reactApplicationContext.getCurrentActivity()
-    if (activity == null) {
-      promise.reject("NO_ACTIVITY", "No activity attached")
-      return
-    }
 
-    if (activity !is FragmentActivity) {
-      promise.reject("INVALID_ACTIVITY", "Activity is not a FragmentActivity")
-      return
-    }
 
-    if (!BiometricHelper.canAuthenticate(activity)) {
-      promise.reject("NO_BIOMETRIC", "Biometric authentication not available")
-      return
-    }
-
-    BiometricHelper.authenticate(
-      activity,
-      onSuccess = {
-        VaultManager.unlockVault()
-        promise.resolve(null)
-      },
-      onFailure = {
-        promise.reject("AUTH_FAILED", "Biometric authentication failed")
-      },
-      onError = { err ->
-        promise.reject("AUTH_FAILED", err)
-      }
-    )
-  }
 
   @ReactMethod
   override fun isVaultLocked(promise: Promise) {
@@ -724,6 +1019,7 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   override fun unlockVaultWithPin(pin: String, promise: Promise) {
     try {
       if (VaultManager.unlockWithPin(pin)) {
+        VaultManager.unlockVault()
         promise.resolve(null)
       } else {
         promise.reject("INVALID_PIN", "PIN is incorrect")
@@ -734,27 +1030,29 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun setVaultPolicy(policy: String, promise: Promise) {
+  override fun setVaultPolicy(policy: String, timeoutMs: Double?, promise: Promise) {
     try {
-      val vaultPolicy = when (policy.uppercase()) {
-        "NONE" -> VaultPolicy.NONE
-        "PIN" -> VaultPolicy.PIN
-        "BIOMETRIC" -> VaultPolicy.BIOMETRIC
-        "TIMEOUT" -> VaultPolicy.TIMEOUT
-        else -> throw IllegalArgumentException("Invalid policy: $policy")
+      when (policy) {
+        "NONE" -> VaultManager.setVaultPolicy(VaultPolicy.NONE)
+        "PIN" -> VaultManager.setVaultPolicy(VaultPolicy.PIN)
+        "BIOMETRIC" -> VaultManager.setVaultPolicy(VaultPolicy.BIOMETRIC)
+        "TIMEOUT" -> {
+          val timeout = timeoutMs?.toLong() ?: 60000L // default 1 min
+          VaultManager.setVaultPolicy(VaultPolicy.TIMEOUT, timeout)
+        }
+        else -> throw IllegalArgumentException("Unknown policy: $policy")
       }
-      VaultManager.setVaultPolicy(vaultPolicy)
       promise.resolve(null)
     } catch (e: Exception) {
-      promise.reject("SET_POLICY_ERROR", e)
+      promise.reject("SET_POLICY_FAILED", e.message, e)
     }
   }
 
   @ReactMethod
   override fun getVaultPolicy(promise: Promise) {
     try {
-      val policy = VaultManager.getVaultState()
-      promise.resolve(policy)
+      val policy = VaultManager.getPolicy()
+      promise.resolve(policy.name)
     } catch (e: Exception) {
       promise.reject("GET_POLICY_ERROR", e)
     }
