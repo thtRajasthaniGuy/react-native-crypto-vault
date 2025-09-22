@@ -1,5 +1,9 @@
 # react-native-crypto-vault
 
+react-native-crypto-vault is a secure, cross-platform library for managing cryptographic keys, encrypting/decrypting sensitive data, and handling vault-based key policies in React Native.
+
+It is designed to provide developer-friendly APIs while enforcing best security practices.
+
 ## Motivation
 
 Mobile applications often need to store highly sensitive data, including:
@@ -164,6 +168,33 @@ const uuid = await CryptoVault.getRandomId();
 console.log('Random UUID:', uuid);
 ```
 
+# 7. Encrypt / Decrypt Data
+
+```
+//Use AES-GCM (with optional HMAC) to encrypt sensitive data:
+const cipherText = await CryptoVault.aesGcmEncrypt('Hello', alias);
+const plainText = await CryptoVault.aesGcmDecrypt(cipherText, alias);
+```
+
+# 8. Backup & Restore Keys
+
+```
+///You can export keys securely in Base64 and restore them later:
+
+const backup = await CryptoVault.backupKey(alias);
+await CryptoVault.restoreKey(alias + '_restored', backup);
+
+```
+
+# 9. Vault Locking / Unlocking
+
+```
+///Depending on policy, lock or unlock the vault:
+await CryptoVault.lockVault();
+const locked = await CryptoVault.isVaultLocked();
+await CryptoVault.unlockVault(''); // policy NONE does not require data
+```
+
 # 7. Simple Connectivity
 
 ```
@@ -173,20 +204,31 @@ console.log(await CryptoVault.echo('hello')); // "hello"
 
 # API Reference (Detailed)
 
-| Method                                               | Parameters                      | Returns           | Description                                    |
-| ---------------------------------------------------- | ------------------------------- | ----------------- | ---------------------------------------------- |
-| `ping()`                                             | -                               | `string`          | Test method; returns `"pong"`                  |
-| `echo(message: string)`                              | `message`                       | `string`          | Returns the input message                      |
-| `getDeviceInfo()`                                    | -                               | `Promise<string>` | Returns unique device identifier               |
-| `getRandomId()`                                      | -                               | `Promise<string>` | Generates UUID                                 |
-| `hashString(message: string)`                        | `message`                       | `Promise<string>` | SHA-256 hash of message                        |
-| `hmacSHA256(message: string, keyAlias)`              | `message`, `keyAlias`           | `Promise<string>` | Computes HMAC using secure key                 |
-| `aesGcmEncrypt(plainText, keyAlias)`                 | `plainText`, `keyAlias`         | `Promise<string>` | AES-GCM encryption                             |
-| `aesGcmDecrypt(cipherText, keyAlias)`                | `cipherText`, `keyAlias`        | `Promise<string>` | AES-GCM decryption                             |
-| `getRandomBytes(length)`                             | `length`                        | `Promise<string>` | Generate cryptographically secure random bytes |
-| `generateSecureKey(alias)`                           | `alias`                         | `Promise<string>` | Generate or retrieve secure key                |
-| `aesGcmEncryptWithHmac(plainText, keyBase64)`        | `plainText`, `keyBase64`        | `Promise<string>` | Encrypt using AES-GCM + HMAC                   |
-| `aesGcmDecryptWithHmac(cipherTextBase64, keyBase64)` | `cipherTextBase64`, `keyBase64` | `Promise<string>` | Decrypt AES-GCM + HMAC                         |
+| Method                                                           | Parameters                                                            | Returns            | Description & Flow Notes                                                                                                                                                                            |                                 |                 |                                                 |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------------- | ----------------------------------------------- |
+| `generateSecureKey(alias)`                                       | `alias: string`                                                       | `Promise<string>`  | Generates or retrieves a secure key. Must call before encryption/decryption                                                                                                                         |                                 |                 |                                                 |
+| `aesGcmEncrypt(plainText, alias)`                                | `plainText: string`, `alias: string`                                  | `Promise<string>`  | AES-GCM encrypts plaintext. Requires key generated                                                                                                                                                  |                                 |                 |                                                 |
+| `aesGcmDecrypt(cipherText, alias)`                               | `cipherText: string`, `alias: string`                                 | `Promise<string>`  | AES-GCM decrypts ciphertext. Requires key generated                                                                                                                                                 |                                 |                 |                                                 |
+| `aesGcmEncryptWithHmac(plainText, keyBase64)`                    | `plainText: string`, `keyBase64`                                      | `Promise<string>`  | Authenticated encryption. Requires Base64 key                                                                                                                                                       |                                 |                 |                                                 |
+| `aesGcmDecryptWithHmac(cipherTextBase64, keyBase64)`             | `cipherTextBase64: string`, `keyBase64`                               | `Promise<string>`  | Authenticated decryption. Requires Base64 key                                                                                                                                                       |                                 |                 |                                                 |
+| `backupKey(alias)`                                               | `alias: string`                                                       | `Promise<string>`  | Exports key as Base64; key must exist                                                                                                                                                               |                                 |                 |                                                 |
+| `restoreKey(alias, backupBlob)`                                  | `alias: string`, `backupBlob: string`                                 | `Promise<void>`    | Restores key from Base64 backup                                                                                                                                                                     |                                 |                 |                                                 |
+| `lockVault()`                                                    | -                                                                     | `Promise<void>`    | Locks vault; only affects methods if policy != NONE                                                                                                                                                 |                                 |                 |                                                 |
+| `unlockVault(authData)`                                          | `authData: string`                                                    | `Promise<void>`    | Unlocks vault; authData used if policy requires                                                                                                                                                     |                                 |                 |                                                 |
+| `isVaultLocked()`                                                | -                                                                     | `Promise<boolean>` | Check if vault is currently locked                                                                                                                                                                  |                                 |                 |                                                 |
+| `setVaultPolicy(policy, timeoutMs?)`                             | \`policy: 'NONE'                                                      | 'PIN'              | 'BIOMETRIC'                                                                                                                                                                                         | 'TIMEOUT', timeoutMs?: number\` | `Promise<void>` | Sets vault policy; affects lock/unlock behavior |
+| `hashString(message)`                                            | `message: string`                                                     | `Promise<string>`  | SHA-256 hash; independent method                                                                                                                                                                    |                                 |                 |                                                 |
+| `hmacSHA256(message, alias)`                                     | `message: string`, `alias: string`                                    | `Promise<string>`  | HMAC; key must exist                                                                                                                                                                                |                                 |                 |                                                 |
+| `getRandomBytes(length)`                                         | `length: number`                                                      | `Promise<string>`  | Independent; cryptographically secure                                                                                                                                                               |                                 |                 |                                                 |
+| `getRandomId()`                                                  | -                                                                     | `Promise<string>`  | Generates UUID                                                                                                                                                                                      |                                 |                 |                                                 |
+| `getDeviceInfo()`                                                | -                                                                     | `Promise<string>`  | Returns unique device ID                                                                                                                                                                            |                                 |                 |                                                 |
+| `ping()`                                                         | -                                                                     | `string`           | Test connectivity                                                                                                                                                                                   |                                 |                 |                                                 |
+| `echo(message)`                                                  | `message: string`                                                     | `string`           | Returns the same message                                                                                                                                                                            |                                 |                 |                                                 |
+| Method                                                           | Parameters                                                            | Returns            | Description & Flow Notes                                                                                                                                                                            |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- | -----------------  | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generateSecureKeyWithAuth(alias, authValiditySeconds?)`         | `alias: string`, `authValiditySeconds?: number`                       | `Promise<string>`  | Generates a key protected by biometrics. `authValiditySeconds` defines how long the key remains usable after authentication (default: -1 = one-time auth). **Requires device fingerprint enrolled** |
+| `aesGcmEncryptWithAuth(plainText, alias, authValiditySeconds?)`  | `plainText: string`, `alias: string`, `authValiditySeconds?: number`  | `Promise<string>`  | Encrypts data using a key protected with biometric authentication. User must authenticate to use the key.                                                                                           |
+| `aesGcmDecryptWithAuth(cipherText, alias, authValiditySeconds?)` | `cipherText: string`, `alias: string`, `authValiditySeconds?: number` | `Promise<string>`  | Decrypts data using a key protected with biometric authentication. User must authenticate to access the key.                                                                                        |
 
 # Security Notes
 
@@ -204,15 +246,7 @@ Sensitive data should never be logged or exposed in memory
 
 IOS Soon
 
-Biometric-based key access (Fingerprint / Face ID)
-
-Backup & restore secure vault data
-
-Auto-lock vault after inactivity
-
-Support for asymmetric encryption (RSA/ECC)
-
-Custom key sizes and algorithms
+Biometric-based key access (Face ID)
 
 # Contributing
 

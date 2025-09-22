@@ -911,27 +911,9 @@ override fun aesGcmDecryptRaw(cipherTextBase64: String, keyBase64: String, promi
   @ReactMethod
   override fun backupVault(password: String, promise: Promise) {
     try {
-      Log.d("VaultManager", "=== BACKUP STARTED ===")
-      Log.d("VaultManager", "Password length: ${password.length}")
-      Log.d("VaultManager", "Password starts with: ${password.take(3)}...")
-
-      // Call VaultManager.backupVault directly
-      Log.d("VaultManager", "Initializing VaultManager...")
-      VaultManager.init(reactApplicationContext)
-      Log.d("VaultManager", "VaultManager initialized successfully")
-
-      Log.d("VaultManager", "Calling backupVault...")
       val backupBlob = VaultManager.backupVault(password)
-      Log.d("VaultManager", "Backup successful, blob length: ${backupBlob.length}")
-      Log.d("VaultManager", "Backup blob preview: ${backupBlob.take(100)}...")
-
       promise.resolve(backupBlob)
-      Log.d("VaultManager", "=== BACKUP COMPLETED ===")
     } catch (e: Exception) {
-      Log.e("VaultManager", "=== BACKUP FAILED ===")
-      Log.e("VaultManager", "Error type: ${e.javaClass.simpleName}")
-      Log.e("VaultManager", "Error message: ${e.message}")
-      Log.e("VaultManager", "Stack trace:", e)
       promise.reject("BACKUP_FAILED", e)
     }
   }
@@ -939,26 +921,10 @@ override fun aesGcmDecryptRaw(cipherTextBase64: String, keyBase64: String, promi
   @ReactMethod
   override fun restoreVault(password: String, backupBlob: String, promise: Promise) {
     try {
-      Log.d("VaultManager", "=== RESTORE STARTED ===")
-      Log.d("VaultManager", "Password length: ${password.length}")
-      Log.d("VaultManager", "Backup blob length: ${backupBlob.length}")
-      Log.d("VaultManager", "Backup blob preview: ${backupBlob.take(100)}...")
-
-      Log.d("VaultManager", "Initializing VaultManager...")
       VaultManager.init(reactApplicationContext)
-      Log.d("VaultManager", "VaultManager initialized successfully")
-
-      Log.d("VaultManager", "Calling restoreVault...")
       VaultManager.restoreVault(password, backupBlob)
-      Log.d("VaultManager", "Restore successful")
-
       promise.resolve(true)
-      Log.d("VaultManager", "=== RESTORE COMPLETED ===")
     } catch (e: Exception) {
-      Log.e("VaultManager", "=== RESTORE FAILED ===")
-      Log.e("VaultManager", "Error type: ${e.javaClass.simpleName}")
-      Log.e("VaultManager", "Error message: ${e.message}")
-      Log.e("VaultManager", "Stack trace:", e)
       promise.reject("RESTORE_FAILED", e)
     }
   }
