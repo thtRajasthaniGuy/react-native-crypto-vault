@@ -1,175 +1,276 @@
-# Best Practices & Integration Guide for react-native-crypto-vault
+react-native-crypto-vault: Complete Integration & Best Practices Guide
 
-This guide explains how to securely integrate `react-native-crypto-vault` in your React Native app, covering:
+react-native-crypto-vault is a secure, cross-platform cryptography library for React Native. It handles key management, encryption, hashing, signing, and vault policies in a unified way.
 
-- Key generation  
-- Encryption & decryption  
-- Hashing & signing  
-- Secure vault access  
-- Security best practices  
+This guide is structured to show method dependencies, usage flow, and best practices.
 
----
+# 1. Key Management
 
-## 1. Key Management
-
-### Generating a Secure Key
-
-```ts
+1.1 Generate a Secure Key
 import CryptoVault from 'react-native-crypto-vault';
 
 const alias = 'user_aes_key';
 
 // Generate key if it doesn't exist
 await CryptoVault.generateSecureKey(alias);
-```
+console.log('Secure key generated for alias:', alias);
+
+# Details:
+
+Keys are stored in Android Keystore or iOS Keychain.
+
+Keys are never exported in plaintext.
+
+Each key is tied to a unique alias.
+
+Generates a 256-bit AES key by default.
+
+Flow: Must generate the key before performing encryption/decryption.
 
 # Best Practices:
 
-Use unique aliases per key to avoid overwriting
+Use unique aliases per key to avoid overwriting.
 
-Generate the key once per user/session and reuse it for encryption operations
+Generate the key once per user/session.
 
-Never store plaintext keys in code or local storage
+Never store plaintext keys in code or AsyncStorage.
 
-# Retrieving a Key
+Prefer separate keys for separate purposes (e.g., session_key vs auth_token_key).
 
-Keys are never exported in plaintext. Use library methods directly to encrypt/decrypt:
-```
-const encryptedData = await CryptoVault.aesGcmEncrypt('secret', alias);
-```
+# 1.2 Generate Key with Authentication (Fingerprint/Biometric)
+
+const alias = 'user_auth_key';
+
+// Requires device biometric enrollment
+await CryptoVault.generateSecureKeyWithAuth(alias, 30); // valid for 30 seconds
+
+# Details:
+
+Works with Fingerprint and Face match (future).
+
+Auth method requires device biometric support.
+
+Returns a key alias only after user authentication.
+
+Flow Dependency: User must authenticate via biometrics for operations using this key.
+
+Best Practices:
+
+Use for high-value operations like payment data or tokens.
+
+Do not hardcode biometric prompts or credentials.
+
+# 1.3 Backup & Restore Key (Future)
+
+const backupBlob = await CryptoVault.backupKey(alias);
+await CryptoVault.restoreKey('restored_key_alias', backupBlob);
+
+# Details:
+
+Exports encrypted backup of keys in Base64.
+
+Restore generates the same key under a new alias.
+
+Useful for migrating keys between devices.
 
 # 2. AES-GCM Encryption & Decryption
 
-AES-GCM provides authenticated encryption, which ensures:
-
-Confidentiality: Only someone with the key can decrypt
-
-Integrity: Detects if the ciphertext was modified
-
-```
-const plainText = 'Sensitive data';
+2.1 Encrypt
+const plainText = 'Sensitive Data';
 const cipherText = await CryptoVault.aesGcmEncrypt(plainText, alias);
 
+# 2.2 Decrypt
+
 const decrypted = await CryptoVault.aesGcmDecrypt(cipherText, alias);
-```
+console.log(decrypted); // "Sensitive Data"
 
-Security Tips:
+Flow Notes:
 
-Always use a unique IV per encryption (library handles this automatically)
+Encrypt first, decrypt later with the same alias.
 
-Use different keys for different purposes (e.g., user tokens vs app secrets)
+Must generate key before encryption.
 
-Never log or expose ciphertext unnecessarily
+Decryption fails if the key is missing or vault is locked.
 
-# 3. SHA-256 Hashing
-```
-const passwordHash = await CryptoVault.hashString('my-password');
-```
+Security Notes:
 
-Best Practices:
+Random IV is automatically generated per encryption.
 
-Use hashing for password verification or PIN storage
+AES-GCM ensures confidentiality + integrity.
 
-Consider adding a salt to hashes for extra security
+Do not reuse keys for unrelated data.
 
-Never store raw passwords in storage
+# 2.3 AES-GCM with Authentication (Future)
 
-# 4. HMAC-SHA256 Signing
-HMAC ensures message authenticity. Only someone with the key can generate the same HMAC:
+const encryptedAuth = await CryptoVault.aesGcmEncryptWithAuth(
+'Sensitive Data',
+alias,
+30 // seconds for auth validity
+);
 
-```
-const message = 'data-to-authenticate';
-const hmac = await CryptoVault.hmacSHA256(message, alias);
-```
+Notes:
 
-Best Practices:
+Requires biometric authentication.
 
-Use HMAC to verify messages from external systems
+Ciphertext can only be decrypted after successful user authentication.
 
-Combine with AES-GCM to create authenticated encryption
+Future enhancement: Support Face ID.
 
-# 5. AES-GCM + HMAC (Authenticated Encryption)
+# 2.4 AES-GCM + HMAC (Authenticated Encryption)
 
-```
 const randomKey = await CryptoVault.getRandomBytes(32);
-const encrypted = await CryptoVault.aesGcmEncryptWithHmac('message', randomKey);
+const encrypted = await CryptoVault.aesGcmEncryptWithHmac('Message', randomKey);
 const decrypted = await CryptoVault.aesGcmDecryptWithHmac(encrypted, randomKey);
-```
 
-Why this is important:
+Details:
 
-Ensures both confidentiality and integrity
+Combines AES-GCM encryption with HMAC integrity check.
 
-Detects tampering attacks
+Ensures confidentiality + tamper detection.
 
-Tip: Only use this when transporting data outside the app (e.g., server communication)
+Use this for sensitive data transported outside the app (e.g., server communication).
 
-# 6. Vault Policies & PIN / Biometric Access (Future)
-Unlock vault using PIN or biometric for sensitive operations
+# 3. Hashing & Signing
 
-Auto-lock after inactivity to prevent unauthorized access
+3.1 SHA-256 Hash
+const hash = await CryptoVault.hashString('my-password');
 
-Best Practices:
+One-way hash for passwords or verification.
 
-Encourage users to enable biometrics for convenience and security
+Recommended to use salt for passwords.
 
-Never hardcode PINs; always let users set their own
+# 3.2 HMAC-SHA256
 
-# 7. Random IDs & Device Information
-```
-const deviceId = await CryptoVault.getDeviceInfo();
-const uuid = await CryptoVault.getRandomId();
-```
+const message = 'message-to-sign';
+const hmac = await CryptoVault.hmacSHA256(message, alias);
+
+Authenticates message integrity.
+
+Only valid with correct key alias.
+
+Can be combined with AES-GCM for authenticated encryption.
+
+# 4. Vault Policies & Access Control
+
+4.1 Check Device Security
+const isSecure = await CryptoVault.isDeviceSecure();
+console.log('Device Secure:', isSecure);
+
+Checks whether device has PIN, password, or biometrics enabled.
+
+# 4.2 Set Vault Policy
+
+await CryptoVault.setVaultPolicy('TIMEOUT', 3000); // 3 seconds
+
+Policies:
+
+NONE – Vault always unlocked
+
+PIN – Unlock via user PIN
+
+BIOMETRIC – Unlock via fingerprint/face
+
+TIMEOUT – Auto-lock after inactivity
+
+# 4.3 Lock & Unlock Vault
+
+await CryptoVault.lockVault();
+await CryptoVault.unlockVault(''); // empty if policy NONE
+
+Locks or unlocks vault manually.
+
+Flow: Some encryption/decryption methods require vault to be unlocked.
+
+Future Enhancements:
+
+Unlock with Face ID.
+
+Auto-lock after custom inactivity timeout.
+
+# 5. Random Data & Device Information
+
+const deviceId = await CryptoVault.getDeviceInfo(); // unique device identifier
+const uuid = await CryptoVault.getRandomId(); // cryptographically secure UUID
+const randomBytes = await CryptoVault.getRandomBytes(32); // cryptographically secure random bytes
 
 Use Cases:
 
 Device fingerprinting
 
-Generating unique session identifiers
+Session identifiers
 
-Cryptographically secure random tokens
+Secure salts or nonces for cryptography
 
-Tip: Avoid using predictable IDs; always rely on library-generated values
+# 6. Connectivity & Test Methods
 
-# 8. Integration Workflow Example
-```
-// 1. Generate a key for a user session
-await CryptoVault.generateSecureKey('user_session_key');
+console.log(await CryptoVault.ping()); // returns "pong"
+console.log(await CryptoVault.echo('Hello')); // returns "Hello"
 
-// 2. Encrypt sensitive data
-const encryptedToken = await CryptoVault.aesGcmEncrypt('user-token', 'user_session_key');
+Useful to verify module connectivity in app.
 
-// 3. Store encrypted data securely (e.g., AsyncStorage)
-await AsyncStorage.setItem('token', encryptedToken);
+# 7. Full Integration Workflow Example
 
-// 4. Decrypt data when needed
-const storedCipher = await AsyncStorage.getItem('token');
-const decryptedToken = await CryptoVault.aesGcmDecrypt(storedCipher!, 'user_session_key');
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import CryptoVault from 'react-native-crypto-vault';
 
-// 5. Sign data for server verification
-const signature = await CryptoVault.hmacSHA256(decryptedToken, 'user_session_key');
-```
+const alias = 'user_session_key';
 
-# 9. General Security Best Practices
+// 1️⃣ Generate secure key
+await CryptoVault.generateSecureKey(alias);
 
-Do not expose keys in logs or network requests
+// 2️⃣ Encrypt data
+const token = 'user-secret-token';
+const cipher = await CryptoVault.aesGcmEncrypt(token, alias);
 
-Use unique aliases for each key to avoid accidental overwrite
+// 3️⃣ Store encrypted data securely
+await AsyncStorage.setItem('user_token', cipher);
 
-Prefer biometric access when available for PIN-less security
+// 4️⃣ Retrieve & decrypt
+const storedCipher = await AsyncStorage.getItem('user_token');
+const decryptedToken = await CryptoVault.aesGcmDecrypt(storedCipher!, alias);
 
-Rotate keys periodically for long-term sessions
+// 5️⃣ Sign data for server verification
+const signature = await CryptoVault.hmacSHA256(decryptedToken, alias);
 
-Backup encrypted vault data securely (future feature)
+// 6️⃣ Optionally, use AES-GCM + HMAC for secure transport
+const randomKey = await CryptoVault.getRandomBytes(32);
+const secureEncrypted = await CryptoVault.aesGcmEncryptWithHmac(decryptedToken, randomKey);
+const secureDecrypted = await CryptoVault.aesGcmDecryptWithHmac(secureEncrypted, randomKey);
 
-Use AES-GCM + HMAC for all sensitive communication
+Flow Dependencies:
 
-# 10. Notes for Developers
+Generate key → required for encryption & signing.
 
-Compatible with React Native >=0.70
+Unlock vault (if policy applied) → required for access-controlled methods.
 
-Supports New Architecture TurboModules
+Encrypt / decrypt / sign → core operations.
 
-Keys are non-exportable and safe by default
+Backup & restore (optional, future).
 
-iOS Keychain entitlements may be required for production
+Vault policies → configure PIN/biometric for enhanced security.
+
+# 8. Security Best Practices
+
+Never log or export keys.
+
+Use unique aliases per key.
+
+Prefer biometric access over PIN for convenience & security.
+
+Rotate keys periodically for long-lived sessions.
+
+Always use AES-GCM + HMAC for network communication.
+
+Back up vault securely when feature is available.
+
+Do not store sensitive data in plaintext storage.
+
+# 9. Developer Notes
+
+Supports React Native >=0.70 and TurboModules.
+
+iOS may require Keychain entitlements for production.
+
+Auth methods currently support Fingerprint, future support: Face ID.
+
+AES-GCM, HMAC, and SHA-256 are cryptographically secure defaults.
