@@ -40,7 +40,6 @@ export interface Spec extends TurboModule {
   backupVault(password: string): Promise<string>;
   restoreVault(password: string, backupBlob: string): Promise<boolean>;
   setVaultPin(pin: string): Promise<void>;
-  unlockVaultWithPin(pin: string): Promise<void>;
   setVaultPolicy(
     policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT',
     timeoutMs?: number

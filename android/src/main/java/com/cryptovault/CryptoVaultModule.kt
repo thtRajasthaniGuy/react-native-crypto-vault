@@ -56,6 +56,10 @@ class CryptoVaultModule(reactContext: ReactApplicationContext) :
   private val restoredKeys = ConcurrentHashMap<String, SecretKey>()
   private val secureRandom = SecureRandom()
   private val authManager = AuthenticationManager()
+   init {
+        // Initialize VaultManager once at module creation
+        VaultManager.init(reactContext)
+    }
   override fun getName(): String {
     return NAME
   }
@@ -978,20 +982,6 @@ override fun aesGcmDecryptRaw(cipherTextBase64: String, keyBase64: String, promi
       promise.resolve(null)
     } catch (e: Exception) {
       promise.reject("SET_PIN_ERROR", e)
-    }
-  }
-
-  @ReactMethod
-  override fun unlockVaultWithPin(pin: String, promise: Promise) {
-    try {
-      if (VaultManager.unlockWithPin(pin)) {
-        VaultManager.unlockVault()
-        promise.resolve(null)
-      } else {
-        promise.reject("INVALID_PIN", "PIN is incorrect")
-      }
-    } catch (e: Exception) {
-      promise.reject("UNLOCK_ERROR", e)
     }
   }
 

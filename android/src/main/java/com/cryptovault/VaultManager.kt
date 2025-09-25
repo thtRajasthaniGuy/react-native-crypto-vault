@@ -65,6 +65,10 @@ object VaultManager {
   private var timeoutDurationMs: Long = 0L
   private var lastUsedAt: Long = 0L
 
+  private const val PREF_NAME = "vault_prefs"
+  private const val KEY_HASHED_PIN = "hashed_pin"
+  private const val KEY_PIN_SALT = "pin_salt"
+
   fun init(context: Context, authValidity: Long = 300) {
     authValiditySeconds = authValidity
 
@@ -79,6 +83,10 @@ object VaultManager {
       PrefKeyEncryptionScheme.AES256_SIV,
       PrefValueEncryptionScheme.AES256_GCM
     )
+    hashedPin = prefs.getString(KEY_HASHED_PIN, null)
+    prefs.getString(KEY_PIN_SALT, null)?.let {
+      pinSalt = Base64.decode(it, Base64.NO_WRAP)
+    }
     loadState()
   }
 
@@ -221,20 +229,6 @@ object VaultManager {
       this.timeoutDurationMs = timeoutMs
     }
   }
-  fun checkVaultLock(): Boolean {
-    when (currentPolicy) {
-      VaultPolicy.NONE -> return false
-      VaultPolicy.PIN, VaultPolicy.BIOMETRIC -> if (!isVaultUnlocked) return true
-      VaultPolicy.TIMEOUT -> {
-        val now = System.currentTimeMillis()
-        if (!isVaultUnlocked || now - lastUnlockTime > autoLockTimeout) {
-          isVaultUnlocked = false
-          return true
-        }
-      }
-    }
-    return false
-  }
 
   // ---------------------------
   // PIN methods
@@ -243,30 +237,32 @@ object VaultManager {
     val secureRandom = SecureRandom()
     pinSalt = ByteArray(16).also { secureRandom.nextBytes(it) }
     hashedPin = hashPin(pin, pinSalt!!)
-    Log.d("VaultManager", "PIN set successfully")
+
+    prefs.edit().putString(KEY_HASHED_PIN, hashedPin)
+      .putString(KEY_PIN_SALT, Base64.encodeToString(pinSalt, Base64.NO_WRAP))
+      .apply()
+
+    isVaultUnlocked = true
+    lastUnlockTime = System.currentTimeMillis()
+
+    Log.d("VaultManager", "PIN set and vault unlocked")
   }
 
-  fun unlockVaultWithPin(pin: String): Boolean {
-    if (currentPolicy != VaultPolicy.PIN) return false
-    val valid = validatePin(pin)
-    if (valid) {
-      isVaultUnlocked = true
-      lastUnlockTime = System.currentTimeMillis()
-    }
-    return valid
-  }
 
   fun unlockWithPin(inputPin: String): Boolean {
     if (hashedPin == null || pinSalt == null) return false
+
     val inputHashed = hashPin(inputPin, pinSalt!!)
     return if (inputHashed.contentEquals(hashedPin!!)) {
       isVaultUnlocked = true
+      lastUnlockTime = System.currentTimeMillis()
       Log.d("VaultManager", "Vault unlocked with PIN")
       true
     } else {
       false
     }
   }
+
 
 
   private fun hashPin(pin: String, salt: ByteArray, iterations: Int = 100_000): String {
@@ -281,6 +277,8 @@ object VaultManager {
     val hashToCompare = hashPin(pin, pinSalt!!)
     return hashToCompare == hashedPin
   }
+
+
 
   // ---------------------------
   // Biometric unlock

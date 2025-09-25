@@ -137,27 +137,33 @@ export default function App() {
       const deviceSecure = await CryptoVault.isDeviceSecure();
       console.log('✅ Device Secure:', deviceSecure);
 
-      // 2️⃣ Set PIN
-      await CryptoVault.setVaultPin('1234');
-      console.log('✅ PIN set successfully');
+      // 2️⃣ Set PIN first if not set
+      const pinSet = true; // you may implement a method like isPinSet()
+      if (!pinSet) {
+        await CryptoVault.setVaultPin('1234');
+        console.log('✅ PIN set successfully');
+      }
 
-      // 3️⃣ Unlock with PIN
-      const unlockResult = await CryptoVault.unlockVaultWithPin('1234');
-      console.log('✅ Unlock with PIN result:', unlockResult);
+      // 3️⃣ Set Vault Policy
+      await CryptoVault.setVaultPolicy('PIN');
+      console.log('✅ Vault policy set');
 
-      // 4️⃣ Set Vault Policy (TIMEOUT, 2s for demo)
-      await CryptoVault.setVaultPolicy('TIMEOUT', 2000);
-      console.log('✅ Vault policy set to TIMEOUT (2s)');
+      // 4️⃣ Check vault lock
+      const isVaultLocked = await CryptoVault.isVaultLocked();
+      console.log('isVaultLocked', isVaultLocked);
 
-      // 5️⃣ Get Vault Policy
-      const policy = await CryptoVault.getVaultPolicy();
-      console.log('✅ Current Vault Policy:', policy);
+      // 5️⃣ Unlock if locked
+      if (isVaultLocked) {
+        await CryptoVault.unlockVault('12345');
+        console.log('✅ Vault unlocked with PIN');
+      }
 
       console.log('--- Vault Policy / PIN / Device Security test finished ---');
     } catch (e) {
       console.error('❌ Vault Policy test failed:', e);
     }
   };
+
   const backupValultTest = async () => {
     try {
       console.log('--- Testing Vault Backup & Restore ---');

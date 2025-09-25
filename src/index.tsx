@@ -55,7 +55,6 @@ export default {
   restoreVault: (password: string, backupBlob: string) =>
     CryptoVault.restoreVault(password, backupBlob),
   setVaultPin: (pin: string) => CryptoVault.setVaultPin(pin),
-  unlockVaultWithPin: (pin: string) => CryptoVault.unlockVaultWithPin(pin),
   setVaultPolicy: (
     policy: 'NONE' | 'PIN' | 'BIOMETRIC' | 'TIMEOUT',
     timeoutMs?: number
