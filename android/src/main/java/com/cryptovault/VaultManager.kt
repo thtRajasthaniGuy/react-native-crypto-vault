@@ -69,6 +69,9 @@ object VaultManager {
   private const val KEY_HASHED_PIN = "hashed_pin"
   private const val KEY_PIN_SALT = "pin_salt"
 
+  private const val KEY_VAULT_POLICY = "vault_policy"
+  private const val KEY_TIMEOUT_MS = "vault_timeout"
+
   fun init(context: Context, authValidity: Long = 300) {
     authValiditySeconds = authValidity
 
@@ -87,6 +90,17 @@ object VaultManager {
     prefs.getString(KEY_PIN_SALT, null)?.let {
       pinSalt = Base64.decode(it, Base64.NO_WRAP)
     }
+
+      // 🔐 Restore Policy + Timeout
+    val policyName = prefs.getString(KEY_VAULT_POLICY, VaultPolicy.NONE.name)
+    vaultPolicy = VaultPolicy.valueOf(policyName ?: VaultPolicy.NONE.name)
+    timeoutDurationMs = prefs.getLong(KEY_TIMEOUT_MS, 0L)
+
+    isLocked = when (vaultPolicy) {
+    VaultPolicy.PIN, VaultPolicy.BIOMETRIC, VaultPolicy.TIMEOUT -> true
+    else -> false
+}
+
     loadState()
   }
 
@@ -224,10 +238,17 @@ object VaultManager {
   // Vault policy & lock check
   // ---------------------------
   fun setVaultPolicy(policy: VaultPolicy, timeoutMs: Long = 0L) {
-    this.vaultPolicy = policy
+   this.vaultPolicy = policy
     if (policy == VaultPolicy.TIMEOUT) {
-      this.timeoutDurationMs = timeoutMs
+        this.timeoutDurationMs = timeoutMs
     }
+
+    prefs.edit()
+        .putString(KEY_VAULT_POLICY, policy.name)
+        .putLong(KEY_TIMEOUT_MS, timeoutMs)
+        .apply()
+
+    Log.d("VaultManager", "Policy set to $policy with timeout=$timeoutMs")
   }
 
   // ---------------------------

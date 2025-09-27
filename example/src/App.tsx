@@ -138,15 +138,15 @@ export default function App() {
       console.log('✅ Device Secure:', deviceSecure);
 
       // 2️⃣ Set PIN first if not set
-      const pinSet = true; // you may implement a method like isPinSet()
-      if (!pinSet) {
-        await CryptoVault.setVaultPin('1234');
-        console.log('✅ PIN set successfully');
-      }
+      // const pinSet = true; // you may implement a method like isPinSet()
+      // if (!pinSet) {
+      //   await CryptoVault.setVaultPin('1234');
+      //   console.log('✅ PIN set successfully');
+      // }
 
-      // 3️⃣ Set Vault Policy
-      await CryptoVault.setVaultPolicy('PIN');
-      console.log('✅ Vault policy set');
+      // // 3️⃣ Set Vault Policy
+      // await CryptoVault.setVaultPolicy('PIN');
+      // console.log('✅ Vault policy set');
 
       // 4️⃣ Check vault lock
       const isVaultLocked = await CryptoVault.isVaultLocked();
